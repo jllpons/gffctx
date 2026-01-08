@@ -1,0 +1,26 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://raw.githubusercontent.com/nf-core/rnaseq/master/assets/schema_input.json",
+    "title": "gffctx pipeline parameters - params.input input.csv",
+    "description": "IN DEV - Schema for validating gffctx pipeline parameters",
+    "type": "array",
+    "items": {
+        "type": "object",
+        "properties": {
+            "sample": {
+                "type": "string",
+                "pattern": "^\\S+$",
+                "errorMessage": "Sample name must be provided and cannot contain spaces",
+                "meta": ["id"]
+            },
+            "annotation": {
+                "type": "string",
+                "format": "file-path",
+                "exists": true,
+                "pattern": "^\\S+\\.(gff|gff2|gff3|gtf)(\\.gz)?$",
+                "errorMessage": "Annotation file path must be provided, cannot contain spaces and must have extension .gff, .gff2, .gff3, .gtf or .gtf. Additionally, if the file is compressed, it must end with .gz",
+            },
+        },
+        "required": ["sample", "annotation"],
+    }
+}

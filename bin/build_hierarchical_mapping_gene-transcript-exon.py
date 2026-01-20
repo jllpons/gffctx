@@ -95,7 +95,9 @@ def load_gene_transcript_map(path: str, valid_genes: set[str]) -> dict[str, str]
     return transcript_to_gene
 
 
-def load_transcript_exon_map(path: str, transcript_to_gene: dict[str, str]) -> dict[str, set[str]]:
+def load_transcript_exon_map(
+    path: str, transcript_to_gene: dict[str, str]
+) -> dict[str, set[str]]:
     """
     Read --transcriptid_exonids CSV and build transcript -> set(exon_id).
 
@@ -135,8 +137,12 @@ def load_transcript_exon_map(path: str, transcript_to_gene: dict[str, str]) -> d
 def main() -> None:
     p = argparse.ArgumentParser()
     p.add_argument("--geneids", required=True, help="CSV with gene IDs in column 0")
-    p.add_argument("--geneid_transcriptids", required=True, help="CSV: gene_id,transcript_id")
-    p.add_argument("--transcriptid_exonids", required=True, help="CSV: transcript_id,exon_id")
+    p.add_argument(
+        "--geneid_transcriptids", required=True, help="CSV: gene_id,transcript_id"
+    )
+    p.add_argument(
+        "--transcriptid_exonids", required=True, help="CSV: transcript_id,exon_id"
+    )
     args = p.parse_args()
 
     # 1) Load known genes (used to validate transcript->gene mappings)
@@ -146,7 +152,9 @@ def main() -> None:
     transcript_to_gene = load_gene_transcript_map(args.geneid_transcriptids, gene_ids)
 
     # 3) Build transcript -> exons mapping, but ONLY for transcripts that map to genes
-    transcript_to_exons = load_transcript_exon_map(args.transcriptid_exonids, transcript_to_gene)
+    transcript_to_exons = load_transcript_exon_map(
+        args.transcriptid_exonids, transcript_to_gene
+    )
 
     # 4) Output ONLY complete (gene, transcript, exon) rows
     out = csv.writer(sys.stdout, delimiter=",", lineterminator="\n")

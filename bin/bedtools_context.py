@@ -23,7 +23,9 @@ class AnnotationClass(Enum):
     OPP_GENE = "OPP_GENE"
 
 
-def label_to_ann_class(label: str, *, default: Optional[AnnotationClass] = None) -> AnnotationClass:
+def label_to_ann_class(
+    label: str, *, default: Optional[AnnotationClass] = None
+) -> AnnotationClass:
     if label == "genes":
         return AnnotationClass.GENE
     if label == "exons":
@@ -66,7 +68,9 @@ def parse_attributes(attr: str) -> dict[str, str]:
 
 def parse_gff9(fields: list[str]) -> GffRecord:
     if len(fields) != 9:
-        raise ValueError(f"Expected 9 fields for GFF record, got {len(fields)}: {fields}")
+        raise ValueError(
+            f"Expected 9 fields for GFF record, got {len(fields)}: {fields}"
+        )
     seqid, source, _type, start, end, score, strand, phase, attrs = fields
     return GffRecord(
         seqid=seqid,
@@ -88,7 +92,9 @@ class IntervalAgg:
     # same-strand
     same_strand_gene_ids: set[str] = field(default_factory=set)
     same_strand_exon_ids: set[str] = field(default_factory=set)
-    same_strand_exon_gene_ids: set[str] = field(default_factory=set) # get parent gene IDs of same-strand exons
+    same_strand_exon_gene_ids: set[str] = field(
+        default_factory=set
+    )  # get parent gene IDs of same-strand exons
 
     # opposite-strand
     opp_strand_gene_ids: set[str] = field(default_factory=set)
@@ -152,7 +158,9 @@ def update_from_intersections(
 ) -> None:
     for row in iter_rows(path):
         if len(row) not in (18, 19):
-            raise ValueError(f"{path}: expected 18/19 columns per row, got {len(row)}: {row}")
+            raise ValueError(
+                f"{path}: expected 18/19 columns per row, got {len(row)}: {row}"
+            )
         if len(row) == 18:
             interval = parse_gff9(row[0:9])
             label = "opposite_genes" if is_opposite else "genes"
@@ -170,7 +178,9 @@ def update_from_intersections(
         iid = interval.attributes.get("ID")
         aid = annotation.attributes.get("ID")
         if not iid or not aid:
-            raise ValueError(f"{path}: missing ID. interval={interval.attributes} annotation={annotation.attributes}")
+            raise ValueError(
+                f"{path}: missing ID. interval={interval.attributes} annotation={annotation.attributes}"
+            )
 
         # This interval has at least one hit, thus not intergenic
         seen_any_hits.add(iid)
@@ -195,7 +205,10 @@ def update_from_intersections(
         # We are talking about intervals intersecting with exons here.
         elif ann_class == AnnotationClass.EXON:
             if is_opposite:
-                print(f"Warning: saw EXON in opposite-strand file for interval {iid} (unexpected)", file=sys.stderr)
+                print(
+                    f"Warning: saw EXON in opposite-strand file for interval {iid} (unexpected)",
+                    file=sys.stderr,
+                )
             agg.same_strand_exon_ids.add(aid)
             g = exon2gene.get(aid)
             if g:
@@ -212,14 +225,20 @@ def update_from_intersections(
 
 
 def decide_context(agg: IntervalAgg) -> ContextClass:
-    same_gene_identity = set(agg.same_strand_gene_ids) | set(agg.same_strand_exon_gene_ids) | set(agg.opp_strand_gene_ids)
+    same_gene_identity = (
+        set(agg.same_strand_gene_ids)
+        | set(agg.same_strand_exon_gene_ids)
+        | set(agg.opp_strand_gene_ids)
+    )
 
     # Rule: ambiguous if intersects different genes (including exons from other genes)
     if len(same_gene_identity) > 1:
         return ContextClass.AMBIGUOUS
 
     # Determine presence of hits
-    has_same_strand_gene = bool(agg.same_strand_gene_ids) or bool(agg.same_strand_exon_gene_ids)
+    has_same_strand_gene = bool(agg.same_strand_gene_ids) or bool(
+        agg.same_strand_exon_gene_ids
+    )
     has_same_strand_exon = bool(agg.same_strand_exon_ids)
     has_opp_strand_gene = bool(agg.opp_strand_gene_ids)
 
@@ -237,29 +256,47 @@ def decide_context(agg: IntervalAgg) -> ContextClass:
         return ContextClass.INTRON
 
     # Opposite strand only
-    if (not has_same_strand_gene) and (not has_same_strand_exon) and has_opp_strand_gene:
+    if (
+        (not has_same_strand_gene)
+        and (not has_same_strand_exon)
+        and has_opp_strand_gene
+    ):
         return ContextClass.OPPOSITE_STRAND_GENE
 
     if agg.incomplete_exon2gene:
         return ContextClass.INCOMPLETE_MAPPING
 
-    raise ValueError(f"Cannot classify interval {agg.interval.attributes.get('ID', '')}: no matching classification found")
+    raise ValueError(
+        f"Cannot classify interval {agg.interval.attributes.get('ID', '')}: no matching classification found"
+    )
 
 
 def emit_csv_header(w: csv.writer) -> None:
-    w.writerow(["interval_id", "context_class", "same_strand_gene_ids", "same_strand_exon_ids", "opp_strand_gene_ids"])
+    w.writerow(
+        [
+            "interval_id",
+            "context_class",
+            "same_strand_gene_ids",
+            "same_strand_exon_ids",
+            "opp_strand_gene_ids",
+        ]
+    )
 
 
 def emit_agg_row(w: csv.writer, iid: str, agg: IntervalAgg) -> None:
-    same_genes = sorted(set(agg.same_strand_gene_ids) | set(agg.same_strand_exon_gene_ids))
+    same_genes = sorted(
+        set(agg.same_strand_gene_ids) | set(agg.same_strand_exon_gene_ids)
+    )
     try:
-        w.writerow([
-            iid,
-            decide_context(agg).value,
-            ";".join(same_genes),
-            ";".join(sorted(agg.same_strand_exon_ids)),
-            ";".join(sorted(agg.opp_strand_gene_ids)),
-        ])
+        w.writerow(
+            [
+                iid,
+                decide_context(agg).value,
+                ";".join(same_genes),
+                ";".join(sorted(agg.same_strand_exon_ids)),
+                ";".join(sorted(agg.opp_strand_gene_ids)),
+            ]
+        )
     except ValueError as e:
         print(f"Warning: skipping interval {iid} due to error: {e}", file=sys.stderr)
 
@@ -275,22 +312,33 @@ def emit_nohits_as_intergenic(
     """
     for row in iter_rows(nohits_path):
         if len(row) != 9:
-            raise ValueError(f"{nohits_path}: expected 9 columns, got {len(row)}: {row}")
+            raise ValueError(
+                f"{nohits_path}: expected 9 columns, got {len(row)}: {row}"
+            )
         interval = parse_gff9(row)
         iid = interval.attributes.get("ID")
         if not iid:
-            raise ValueError(f"{nohits_path}: interval missing ID attribute: {interval.attributes}")
+            raise ValueError(
+                f"{nohits_path}: interval missing ID attribute: {interval.attributes}"
+            )
         if iid in seen_any_hits:
             continue
         w.writerow([iid, ContextClass.INTERGENIC.value, "", "", ""])
 
 
 def main():
-
     ap = argparse.ArgumentParser()
-    ap.add_argument("--same", required=True, help="Same-strand bedtools output (genes+exons)")
-    ap.add_argument("--opp", required=False, help="Opposite-strand bedtools output (genes)")
-    ap.add_argument("--nohits", required=True, help="GFF (9 cols) of intervals with no overlaps (bedtools -v output)")
+    ap.add_argument(
+        "--same", required=True, help="Same-strand bedtools output (genes+exons)"
+    )
+    ap.add_argument(
+        "--opp", required=False, help="Opposite-strand bedtools output (genes)"
+    )
+    ap.add_argument(
+        "--nohits",
+        required=True,
+        help="GFF (9 cols) of intervals with no overlaps (bedtools -v output)",
+    )
     ap.add_argument("--gene2exon", required=True, help="CSV: gene_id,exon_id,")
     args = ap.parse_args()
 
@@ -330,10 +378,8 @@ def main():
     if args.nohits:
         emit_nohits_as_intergenic(w, args.nohits, seen_any_hits)
 
-
     return 0
 
 
 if __name__ == "__main__":
     main()
-

@@ -1,102 +1,164 @@
 #!/usr/bin/env python3
+"""
+RULES:
+- Every output row MUST contain a gene_id.
+- If a transcript has no valid gene_id mapping => omit it entirely.
+- If an exon has no valid transcript mapping => omit it entirely.
+- Output ONLY complete triplets: gene_id, transcript_id, exon_id
+  (No blank transcript/exon columns, no "orphan" output, no inference from exon IDs.)
+"""
 
 import argparse
-from collections import defaultdict
 import csv
 import sys
+from collections import defaultdict
 
-def is_blank_row(row):
+
+def is_blank_row(row) -> bool:
+    """True if the row is empty or only contains whitespace/empty cells."""
+    return (not row) or all((c is None or str(c).strip() == "") for c in row)
+
+
+def clean(cell) -> str:
+    """Convert a CSV cell to a stripped string (safe for None)."""
+    return (cell or "").strip()
+
+
+def load_gene_ids(path: str) -> set[str]:
     """
-    Check if a row is blank (i.e., all cells are None or empty strings).
-
-    Examples:
-    >>> is_blank_row([None, "", "   "])
-    True
-    >>> is_blank_row([None, "data", "   "])
-    False
+    Read --geneids CSV and return a set of valid gene IDs.
+    Assumes gene ID is in column 0.
     """
-    return all((c is None or str(c).strip() == "") for c in row)
+    gene_ids: set[str] = set()
 
-def main():
+    with open(path, newline="") as f:
+        r = csv.reader(f, delimiter=",")
+        for row in r:
+            if is_blank_row(row):
+                continue
+            gene_id = clean(row[0])
+            if gene_id:
+                gene_ids.add(gene_id)
 
-    p = argparse.ArgumentParser(description="Left-outer-join three CSV files to build a hierarchical mapping of gene -> transcripts -> exons.")
-    p.add_argument("--geneids", type=str, required=True)
-    p.add_argument("--geneid_transcriptids", type=str, required=True)
-    p.add_argument("--transcriptid_exonids", type=str, required=True)
+    return gene_ids
+
+
+def load_gene_transcript_map(path: str, valid_genes: set[str]) -> dict[str, str]:
+    """
+    Read --geneid_transcriptids CSV and build transcript -> gene mapping.
+
+    Rules:
+    - If gene_id is blank => ignore (transcript is "orphan", but we do NOT output orphans).
+    - If transcript_id is blank => ignore.
+    - If valid_genes is provided, we only accept mappings where gene_id is in valid_genes.
+      (This prevents outputting unknown genes.)
+    - If a transcript maps to multiple different genes, we drop it (ambiguous).
+    """
+    # Collect ALL gene assignments per transcript first (to detect conflicts).
+    transcript_to_genes: dict[str, set[str]] = defaultdict(set)
+
+    with open(path, newline="") as f:
+        r = csv.reader(f, delimiter=",")
+        for row in r:
+            if is_blank_row(row):
+                continue
+
+            # Expect: gene_id, transcript_id
+            if len(row) < 2:
+                continue
+
+            gene_id = clean(row[0])
+            transcript_id = clean(row[1])
+
+            if not gene_id or not transcript_id:
+                continue
+
+            # Enforce that gene_id must be a known gene from --geneids
+            if valid_genes and gene_id not in valid_genes:
+                continue
+
+            transcript_to_genes[transcript_id].add(gene_id)
+
+    # Now resolve to a strict transcript -> gene mapping, dropping ambiguous transcripts.
+    transcript_to_gene: dict[str, str] = {}
+    for transcript_id, genes in transcript_to_genes.items():
+        if len(genes) == 1:
+            transcript_to_gene[transcript_id] = next(iter(genes))
+        else:
+            # Ambiguous transcript mapping: transcript appears with multiple genes.
+            # We omit it entirely to preserve correctness.
+            print(
+                f"WARNING: transcript '{transcript_id}' maps to multiple genes {sorted(genes)}; omitting transcript",
+                file=sys.stderr,
+            )
+
+    return transcript_to_gene
+
+
+def load_transcript_exon_map(path: str, transcript_to_gene: dict[str, str]) -> dict[str, set[str]]:
+    """
+    Read --transcriptid_exonids CSV and build transcript -> set(exon_id).
+
+    Rules:
+    - Only accept exon mappings where transcript_id is a transcript we already know maps to a gene.
+      (If transcript isn't in transcript_to_gene, exon is ignored.)
+    - If exon_id is blank => ignore.
+    - If transcript_id is blank => ignore.
+    """
+    transcript_to_exons: dict[str, set[str]] = defaultdict(set)
+
+    with open(path, newline="") as f:
+        r = csv.reader(f, delimiter=",")
+        for row in r:
+            if is_blank_row(row):
+                continue
+
+            # Expect: transcript_id, exon_id
+            if len(row) < 2:
+                continue
+
+            transcript_id = clean(row[0])
+            exon_id = clean(row[1])
+
+            if not transcript_id or not exon_id:
+                continue
+
+            # This is the key rule: exon must map to a transcript that maps to a gene.
+            if transcript_id not in transcript_to_gene:
+                continue
+
+            transcript_to_exons[transcript_id].add(exon_id)
+
+    return transcript_to_exons
+
+
+def main() -> None:
+    p = argparse.ArgumentParser()
+    p.add_argument("--geneids", required=True, help="CSV with gene IDs in column 0")
+    p.add_argument("--geneid_transcriptids", required=True, help="CSV: gene_id,transcript_id")
+    p.add_argument("--transcriptid_exonids", required=True, help="CSV: transcript_id,exon_id")
     args = p.parse_args()
 
-    geneid_path, geneid_transcriptid_path, transcriptid_exonid_path = args.geneids, args.geneid_transcriptids, args.transcriptid_exonids
+    # 1) Load known genes (used to validate transcript->gene mappings)
+    gene_ids = load_gene_ids(args.geneids)
 
-    # Obtain the gene IDs from the provided file
-    gene_ids = set()
-    with open(geneid_path) as geneid_file:
-        reader = csv.reader(geneid_file, delimiter=',')
-        for row in reader:
-            if not row or is_blank_row(row):
-                continue
-            gene_id = row[0]
-            gene_ids.add(gene_id)
+    # 2) Build transcript -> gene mapping (strict; orphans ignored; ambiguous dropped)
+    transcript_to_gene = load_gene_transcript_map(args.geneid_transcriptids, gene_ids)
 
-    # Build `gene -> [transcript1, transcript2, ...]` mapping
-    gene_to_transcripts = defaultdict(list)
-    orphan_transcripts = set()
-    with open(geneid_transcriptid_path) as geneid_transcriptid_file:
-        reader = csv.reader(geneid_transcriptid_file, delimiter=',')
-        for row in reader:
-            if not row or is_blank_row(row):
-                continue
-            gene_id = row[0]
-            transcript_id = row[1]
-            if not gene_id:
-                orphan_transcripts.add(transcript_id)
-                continue
-            gene_to_transcripts[gene_id].append(transcript_id)
+    # 3) Build transcript -> exons mapping, but ONLY for transcripts that map to genes
+    transcript_to_exons = load_transcript_exon_map(args.transcriptid_exonids, transcript_to_gene)
 
-    # Build `transcript -> [exon1, exon2, ...]` mapping
-    transcript_to_exons = defaultdict(list)
-    orphan_exons = set()
-    with open(transcriptid_exonid_path) as transcriptid_exonid_file:
-        reader = csv.reader(transcriptid_exonid_file, delimiter=',')
-        for row in reader:
-            if not row or is_blank_row(row):
-                continue
-            transcript_id = row[0]
-            exon_id = row[1]
-            if not transcript_id:
-                orphan_exons.add(exon_id)
-                continue
-            transcript_to_exons[transcript_id].append(exon_id)
+    # 4) Output ONLY complete (gene, transcript, exon) rows
+    out = csv.writer(sys.stdout, delimiter=",", lineterminator="\n")
 
+    rows = []
+    for transcript_id, exons in transcript_to_exons.items():
+        gene_id = transcript_to_gene[transcript_id]  # always exists by construction
+        for exon_id in exons:
+            rows.append((gene_id, transcript_id, exon_id))
 
-    # Build the hierarchical mapping: gene -> transcripts -> exons
-    hierarchical_mapping = {}
-    for gene_id in gene_ids:
-        transcripts = gene_to_transcripts.get(gene_id, [])
-        hierarchical_mapping[gene_id] = {}
-        for transcript_id in transcripts:
-            exons = transcript_to_exons.get(transcript_id, [])
-            hierarchical_mapping[gene_id][transcript_id] = exons
-
-    # Output the hierarchical mapping as CSV
-    out = csv.writer(sys.stdout, delimiter=',', lineterminator='\n')
-
-    for gene_id, transcripts in hierarchical_mapping.items():
-        for transcript_id, exons in transcripts.items():
-            if exons:
-                for exon_id in exons:
-                    out.writerow([gene_id, transcript_id, exon_id])
-            else:
-                out.writerow([gene_id, transcript_id, ""])
-        if not transcripts:
-            out.writerow([gene_id, "", ""])
-
-    for orphan_transcript_id in orphan_transcripts:
-        exons = transcript_to_exons.get(orphan_transcript_id, [])
-        if exons:
-            for exon_id in exons:
-                out.writerow(["", orphan_transcript_id, exon_id])
-        else:
-            out.writerow(["", orphan_transcript_id, ""])
+    for gene_id, transcript_id, exon_id in sorted(rows):
+        out.writerow([gene_id, transcript_id, exon_id])
 
 
 if __name__ == "__main__":

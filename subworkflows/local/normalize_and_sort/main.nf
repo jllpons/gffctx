@@ -1,13 +1,16 @@
 include { BEDTOOLS_SORT as BEDTOOLS_SORT_gene                               } from '../../../modules/local/bedtools/main'
 include { BEDTOOLS_SORT as BEDTOOLS_SORT_transcript                         } from '../../../modules/local/bedtools/main'
 include { BEDTOOLS_SORT as BEDTOOLS_SORT_exon                               } from '../../../modules/local/bedtools/main'
+include { BEDTOOLS_SORT as BEDTOOLS_SORT_intervals                          } from '../../../modules/local/bedtools/main'
 
 include { AWK_MATCH_FEATURE_KEYWORD as AWK_MATCH_FEATURE_KEYWORD_gene       } from '../../../modules/local/awk/main'
 include { AWK_MATCH_FEATURE_KEYWORD as AWK_MATCH_FEATURE_KEYWORD_transcript } from '../../../modules/local/awk/main'
 include { AWK_MATCH_FEATURE_KEYWORD as AWK_MATCH_FEATURE_KEYWORD_exon       } from '../../../modules/local/awk/main'
 
+include { AWK_IDS_FROM_GFF                                                  } from '../../../modules/local/awk/main'
 
-workflow NORMALIZE_AND_SORT {
+
+workflow NORMALIZE_AND_SORT_ANNOTATIONS {
 
     take:
     annotation // tuple val(meta), path(annotation.gff3)
@@ -55,8 +58,36 @@ workflow NORMALIZE_AND_SORT {
 
 
     emit:
-    genes      = BEDTOOLS_SORT_gene.out.sorted_gff
-    transcripts= BEDTOOLS_SORT_transcript.out.sorted_gff
-    exons      = BEDTOOLS_SORT_exon.out.sorted_gff
-    versions = ch_versions
+    genes       = BEDTOOLS_SORT_gene.out.sorted_gff
+    transcripts = BEDTOOLS_SORT_transcript.out.sorted_gff
+    exons       = BEDTOOLS_SORT_exon.out.sorted_gff
+    versions    = ch_versions
+}
+
+
+workflow NORMALIZE_AND_SORT_INTERVALS {
+
+    take:
+    intervals  // tuple val(meta), path(intervals.gff3)
+
+
+    main:
+    // Versions collector
+    ch_versions = Channel.empty()
+
+    // Intervals sorting
+    BEDTOOLS_SORT_intervals(
+        intervals,
+    )
+    ch_versions = ch_versions.mix(BEDTOOLS_SORT_intervals.out.versions)
+    AWK_IDS_FROM_GFF(
+        BEDTOOLS_SORT_intervals.out.sorted_gff,
+    )
+    ch_versions = ch_versions.mix(AWK_IDS_FROM_GFF.out.versions)
+
+
+    emit:
+    intervals       = BEDTOOLS_SORT_intervals.out.sorted_gff
+    interval_ids    = AWK_IDS_FROM_GFF.out.extracted_ids
+    versions        = ch_versions
 }

@@ -20,7 +20,14 @@
                 "pattern": "^\\S+\\.(gff|gff2|gff3|gtf)(\\.gz)?$",
                 "errorMessage": "Annotation file path must be provided, cannot contain spaces and must have extension .gff, .gff2, .gff3, .gtf or .gtf. Additionally, if the file is compressed, it must end with .gz",
             },
+            "intervals": {
+                "type": "string",
+                "format": "file-path",
+                "exists": true,
+                "pattern": "^\\S+\\.(gff|gff2|gff3|gtf)(\\.gz)?$",
+                "errorMessage": "Genomic intervals file path must be provided, cannot contain spaces and must have extension .gff, .gff2, .gff3, .gtf or .gtf. Additionally, if the file is compressed, it must end with .gz",
+            },
         },
-        "required": ["sample", "annotation"],
+        "required": ["sample", "annotation", "intervals"],
     }
 }

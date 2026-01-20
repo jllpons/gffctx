@@ -1,6 +1,7 @@
 include { AWK_IDS_FROM_GFF                                                  } from '../../../modules/local/awk/main'
-include { AWK_PARENTID_ID_FROM_GFF as AWK_PARENTID_ID_FROM_GFF_transcripts  } from '../../../modules/local/awk/main'
 include { AWK_PARENTID_ID_FROM_GFF as AWK_PARENTID_ID_FROM_GFF_exons        } from '../../../modules/local/awk/main'
+include { AWK_PARENTID_ID_FROM_GFF as AWK_PARENTID_ID_FROM_GFF_transcripts  } from '../../../modules/local/awk/main'
+include { AWK_FILTER_GFF_BY_HIER_MAP_IDS                                    } from '../../../modules/local/awk/main'
 include { BUILD_HIERARCHICAL_MAPPING_GENE_TRANSCRIPT_EXON                   } from '../../../modules/local/python/main'
 
 
@@ -36,7 +37,19 @@ workflow GENE_TRANSCRIPT_EXON_HIERARCHY_MAP {
     )
     ch_versions = ch_versions.mix(BUILD_HIERARCHICAL_MAPPING_GENE_TRANSCRIPT_EXON.out.versions)
 
+
+    AWK_FILTER_GFF_BY_HIER_MAP_IDS(
+        genes,
+        transcripts,
+        exons,
+        BUILD_HIERARCHICAL_MAPPING_GENE_TRANSCRIPT_EXON.out.hier_map_gene_transcript_exon
+    )
+    ch_versions = ch_versions.mix(AWK_FILTER_GFF_BY_HIER_MAP_IDS.out.versions)
+
     emit:
-    gene_transcript_exon_hier_map = BUILD_HIERARCHICAL_MAPPING_GENE_TRANSCRIPT_EXON.out.hier_map_gene_transcript_exon
-    versions = ch_versions
+    genes_filtered                  = AWK_FILTER_GFF_BY_HIER_MAP_IDS.out.filtered_genes
+    transcripts_filtered            = AWK_FILTER_GFF_BY_HIER_MAP_IDS.out.filtered_transcripts
+    exons_filtered                  = AWK_FILTER_GFF_BY_HIER_MAP_IDS.out.filtered_exons
+    gene_transcript_exon_hier_map   = BUILD_HIERARCHICAL_MAPPING_GENE_TRANSCRIPT_EXON.out.hier_map_gene_transcript_exon
+    versions                        = ch_versions
 }
